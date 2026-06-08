@@ -1,34 +1,57 @@
-# BMD Auto-Import Pipeline (Completed)
+# BMD Auto-Import Pipeline
 
-Die Infrastruktur für das automatisierte COC-Import-System wurde komplett nach deinen First-Principles-Vorgaben refakturiert und steht nun stabil und extrem performant bereit.
+Das Projekt hat jetzt zwei Importwege: eine Web-App als Arbeitszentrale und einen optionalen Google-Drive-Webhook. Die Web-App ist der produktive Hauptfluss fuer MVP-Tests, weil sie Upload, Status, Verarbeitung, Pruefung und Export sichtbar macht.
 
 ## Was wir gebaut haben
 
-> [!TIP]
-> Die ressourcenfressende Polling-Logik auf dem Vercel-Server wurde eliminiert. Das System arbeitet jetzt reaktiv mit einer maximalen Latenz von 1 Minute über einen Apps Script Trigger (kostenlos in Google Drive). Zudem werden keine flachen Excel-Dateien mehr erzeugt, sondern die Original-GDB-Templates exakt beibehalten.
+### 1. Web-App
 
-### 1. Webhook (`api/process.ts`)
-Wir haben den Serverless-Endpunkt so umgeschrieben, dass er ausschließlich auf `POST`-Requests reagiert. Er empfängt direkt die `fileId` und leitet sie an die Logik weiter. Das verhindert Race-Conditions bei gleichzeitigem Upload von mehreren Dateien.
+Die Next.js-App bietet:
 
-### 2. Template-Injektion (`src/excelService.ts`)
-Die GDB-Templates (`Drival_COC.xlsx`, `Tomplan_COC.xlsx`, `Niewiadow_COC.xlsx`) liegen nun sicher im Ordner `/templates`. 
-Gemini extrahiert die Felder (FIN, Marke, Typ, etc.) als JSON. Der `excelService` öffnet das zur Marke passende Template im Vercel RAM, sucht nach dem exakten Key (z.B. "FIN") in Spalte A und schreibt den Wert in Spalte D ("Unnamed: 3") in exakt die richtige Zeile. Das GDB-Format bleibt absolut unberührt.
+- Upload-Seite fuer eine oder mehrere PDF- und Bilddateien
+- Uebersicht mit Status (`new`, `processing`, `review`, `success`, `error`)
+- Detailseite mit Dokumentvorschau, extrahierten Feldern, Fehlern und Exportlink
+- Pruefformular zum manuellen Korrigieren und Erzeugen des finalen Exports
+- API-Route `/api/upload` fuer sichere Uploads ueber den Server
+- API-Route `/api/process-document` fuer Extraktion und BMD-Export
+- API-Route `/api/update-document` fuer manuelle Korrektur und Export
 
-### 3. Google Apps Script Trigger
-Um den Vercel-Endpunkt sofort aufzurufen, ohne Cron-Jobs zu nutzen, habe ich das exakte Script geschrieben, das in Google Drive als Trigger eingerichtet werden muss.
+### 2. Supabase
 
-> [!IMPORTANT]
-> Du findest das Script in deinem Workspace unter:
-> [google-apps-script.js](file:///C:/Users/luca/.gemini/antigravity/scratch/bmd-auto-import/google-apps-script.js)
+Supabase wird fuer Datenbank und Dateiablage genutzt.
 
-## Nächste Schritte (Deployment)
+- Tabelle: `documents`
+- Storage Bucket: `coc-documents`
+- Storage Bucket: `coc-exports`
+- SQL Setup: `supabase/schema.sql`
 
-1. **GitHub Push:** Pushe den Inhalt des Ordners `C:\Users\luca\.gemini\antigravity\scratch\bmd-auto-import` in dein GitHub Repository.
-2. **Vercel Setup:** Verknüpfe das Repository mit Vercel. Füge dort folgende Environment Variables hinzu:
-   - `GOOGLE_CREDENTIALS_BASE64` (Der base-64 encodierte String der Google Service Account JSON)
+### 3. Template-Injektion
+
+Die GDB-Templates (`Drival_COC.xlsx`, `Tomplan_COC.xlsx`, `Niewiadow_COC.xlsx`) liegen im Ordner `/templates`.
+
+Gemini extrahiert die Felder als JSON. Der `excelService` oeffnet das passende Template, sucht nach dem exakten Key in Spalte A und schreibt nur in Spalte D derselben Zeile. Das Worksheet wird nicht neu aufgebaut.
+
+### 4. Google Apps Script Trigger
+
+Der Drive-Import bleibt als optionaler Kanal erhalten. Apps Script nutzt einen 1-Minuten-Trigger, iteriert neue Dateien, sendet `fileId` an `/api/process` und nutzt `WEBHOOK_SECRET` per Authorization Header.
+
+Das Script liegt hier:
+
+`google-apps-script.js`
+
+## Naechste Schritte
+
+1. Supabase-Projekt anlegen und `supabase/schema.sql` im SQL Editor ausfuehren.
+2. Repository mit Vercel verbinden.
+3. Environment Variables in Vercel setzen:
+   - `SUPABASE_URL`
+   - `SUPABASE_SERVICE_ROLE_KEY`
    - `GEMINI_API_KEY`
-   - `DRIVE_TARGET_FOLDER_ID` (Die ID des Zielordners)
-   - `WEBHOOK_SECRET` (Ein beliebiges sicheres Passwort, das auch im Apps Script eingetragen wird)
-3. **Google Apps Script:** Kopiere den Code aus [google-apps-script.js](file:///C:/Users/luca/.gemini/antigravity/scratch/bmd-auto-import/google-apps-script.js), trage deine tatsächliche Vercel-URL ein und richte den zeitgesteuerten 1-Minuten-Trigger ein, wie in den Kommentaren des Scripts beschrieben.
+   - `WEBHOOK_SECRET` nur fuer Google Drive Import
+   - `GOOGLE_CREDENTIALS_BASE64` nur fuer Google Drive Import
+   - `DRIVE_TARGET_FOLDER_ID` nur fuer Google Drive Import
+4. Lokal `npm run build` ausfuehren.
+5. Auf Vercel deployen.
+6. MVP-Test: Dateien ueber `/upload` hochladen, Detailseite oeffnen, `Verarbeiten` klicken, Export herunterladen.
 
-Das System läuft damit Serverless, latenzfrei und mit 0,- € laufenden Fixkosten.
+Das System ist damit fuer Free-Tier-MVP-Tests nutzbar. Bei wachsendem Volumen koennen OCR, Storage und Processing gezielt auf Paid-Tiers oder Worker-Infrastruktur erweitert werden.

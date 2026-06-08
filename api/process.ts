@@ -59,15 +59,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             const extractedData = await geminiService.extractDataFromPdf(pdfBuffer);
             
             // Inject data into the matching template
-            const excelBuffer = excelService.generateExcelBuffer(extractedData);
-            const outputName = `${extractedData.FIN || 'UNKNOWN'}_BMD_Import.xlsx`;
+            const csvBuffer = excelService.generateCsvBuffer(extractedData);
+            const outputName = `${extractedData.FIN || 'UNKNOWN'}_BMD_Import.csv`;
             
             // Upload the generated Excel to the target folder
             await driveService.uploadFile(
                 outputName,
-                excelBuffer,
+                csvBuffer,
                 targetFolderId,
-                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                'text/csv; charset=utf-8'
             );
 
             // Delete the original PDF only after successful upload

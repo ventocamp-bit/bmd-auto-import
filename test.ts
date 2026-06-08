@@ -40,15 +40,15 @@ async function runLocalTest() {
             console.log('Extracted Data:', extractedData);
             
             console.log(`Injecting data into Template for: ${file.name}`);
-            const excelBuffer = excelService.generateExcelBuffer(extractedData);
-            const outputName = `${extractedData.FIN || 'UNKNOWN'}_BMD_Import.xlsx`;
+            const csvBuffer = excelService.generateCsvBuffer(extractedData);
+            const outputName = `${extractedData.FIN || 'UNKNOWN'}_BMD_Import.csv`;
             
             console.log(`Uploading Excel as: ${outputName}`);
             await driveService.uploadFile(
                 outputName,
-                excelBuffer,
+                csvBuffer,
                 targetFolderId,
-                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                'text/csv; charset=utf-8'
             );
 
             console.log(`Deleting original PDF (Simulated): ${file.name}`);
