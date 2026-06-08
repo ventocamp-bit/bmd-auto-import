@@ -4,6 +4,7 @@ import { ExcelService } from '../../../src/excelService';
 import { GeminiService } from '../../../src/geminiService';
 
 export const runtime = 'nodejs';
+export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
     const webhookSecret = process.env.WEBHOOK_SECRET;
