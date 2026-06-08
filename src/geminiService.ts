@@ -1,5 +1,4 @@
-import { GoogleGenAI } from '@google/genai';
-
+import { GoogleGenAI, Type, Schema } from '@google/genai';
 export interface CocData {
     FIN: string;
     Aussteller: string;
@@ -76,28 +75,7 @@ export const GDB_FIELD_KEYS = [
 
 type FieldName = string;
 
-async function tryExtractPdfTextLayer(documentBuffer: Buffer, mimeType: string) {
-    if (mimeType !== 'application/pdf') {
-        return '';
-    }
 
-    try {
-        const { PDFParse } = await import('pdf-parse');
-        const parser = new PDFParse({ data: documentBuffer });
-        const result = await parser.getText();
-        await parser.destroy();
-        const text = (result.text || '').trim();
-        const usefulText = text
-            .replace(/--\s*\d+\s+of\s+\d+\s*--/gi, '')
-            .replace(/\s+/g, ' ')
-            .trim();
-
-        return usefulText.length >= 500 ? text : '';
-    } catch (error) {
-        console.error('[pdf-text] extraction failed:', error instanceof Error ? error.message : String(error));
-        return '';
-    }
-}
 
 const FIELD_DEFINITIONS: Record<string, string> = {
     FIN: 'COC 0.10 Fahrzeugidentifikationsnummer / VIN',
@@ -159,37 +137,32 @@ const SCHEMA_EXAMPLE = GDB_FIELD_KEYS.reduce((result, key) => {
     return result;
 }, {} as Record<string, { value: string; confidence: number }>);
 
-const FIELD_RESULT_JSON_SCHEMA = {
-    type: 'object',
-    additionalProperties: false,
-    required: ['_OCR_TEXT', ...GDB_FIELD_KEYS],
-    propertyOrdering: ['_OCR_TEXT', ...GDB_FIELD_KEYS],
+const FIELD_RESULT_SCHEMA: Schema = {
+    type: Type.OBJECT,
     properties: {
         _OCR_TEXT: {
-            type: 'string',
+            type: Type.STRING,
             description: 'Visible OCR text from the document, preserving COC point numbers and relevant table rows for audit and deterministic post-processing.',
         },
         ...GDB_FIELD_KEYS.reduce((result, key) => {
             result[key] = {
-                type: 'object',
-                additionalProperties: false,
-                required: ['value', 'confidence'],
+                type: Type.OBJECT,
                 properties: {
                     value: {
-                        type: 'string',
+                        type: Type.STRING,
                         description: FIELD_DEFINITIONS[key],
                     },
                     confidence: {
-                        type: 'number',
-                        minimum: 0,
-                        maximum: 1,
+                        type: Type.NUMBER,
                         description: '0 to 1 confidence score for this exact extracted value.',
                     },
                 },
+                required: ['value', 'confidence'],
             };
             return result;
-        }, {} as Record<string, unknown>),
+        }, {} as Record<string, Schema>),
     },
+    required: ['_OCR_TEXT', ...GDB_FIELD_KEYS],
 };
 
 const EXTRACTION_SYSTEM_INSTRUCTION = `
@@ -753,28 +726,7 @@ export class GeminiService {
         return response;
     }
 
-    async extractOcrTextFromDocument(documentBuffer: Buffer, mimeType: string): Promise<string> {
-        const textLayer = await tryExtractPdfTextLayer(documentBuffer, mimeType);
-        if (textLayer) {
-            console.log('[pdf-text] using embedded text layer:', { chars: textLayer.length });
-            return textLayer;
-        }
 
-        const base64Document = documentBuffer.toString('base64');
-        const prompt = `
-Perform OCR on this scanned COC document.
-
-Return the visible text only.
-Preserve page order, table row order, COC point numbers, labels, values, units, approval numbers, names, diacritics, and tyre strings.
-Do not summarize.
-Do not infer missing values.
-If a value is unreadable, write [unclear].
-`;
-        const response = await this.generateDocumentContent(base64Document, mimeType, prompt);
-        const ocrText = (response.text || '').trim();
-        console.log('[gemini][ocr] text:', ocrText);
-        return ocrText;
-    }
 
     async extractDataFromPdf(pdfBuffer: Buffer): Promise<CocData> {
         return this.extractDataFromDocument(pdfBuffer, 'application/pdf');
@@ -829,7 +781,7 @@ ${JSON.stringify(SCHEMA_EXAMPLE, null, 2)}
 `;
         const response = await this.generateDocumentContent(base64Document, mimeType, prompt, {
             responseMimeType: 'application/json',
-            responseJsonSchema: FIELD_RESULT_JSON_SCHEMA,
+            responseSchema: FIELD_RESULT_SCHEMA as any,
             systemInstruction: EXTRACTION_SYSTEM_INSTRUCTION,
             temperature: 0,
             topP: 0.1,
