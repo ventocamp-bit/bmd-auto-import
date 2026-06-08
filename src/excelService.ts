@@ -51,7 +51,8 @@ export class ExcelService {
         };
         const aliasJsonKey = Object.entries(keyMapping).find(([, mappedGdbKey]) => mappedGdbKey === gdbKey)?.[0];
         const value = data[gdbKey] ?? (aliasJsonKey ? data[aliasJsonKey] : undefined);
-        const textValue = typeof value === 'string' ? value.trim() : '';
+        const rawTextValue = typeof value === 'string' ? value.trim() : '';
+        const textValue = /^[:;.,\-\s]+$/.test(rawTextValue) ? '' : rawTextValue;
         const confidence = options?.confidences?.[gdbKey];
         const threshold = options?.confidenceThreshold ?? 0.7;
         const uncertain = typeof confidence === 'number' && confidence < threshold;
