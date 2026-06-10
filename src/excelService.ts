@@ -21,6 +21,67 @@ type BatchExportDocument = {
     calculatedFields?: string[];
 };
 
+const NUMERIC_EXPORT_FIELDS = new Set([
+    'RADST_1',
+    'RADST_2',
+    'RADST_3',
+    'RADST_4',
+    'LAENGE',
+    'BREITE',
+    'HOEHE',
+    'ABST_ANHVORR',
+    'LADEFL_LAENGE',
+    'UEBERH_HINTEN',
+    'MASSE_FAHRB',
+    'VERT_ACHSE_1',
+    'VERT_ACHSE_2',
+    'VERT_ACHSE_3',
+    'VERT_ACHSE_4',
+    'VERT_STUETZ',
+    'TATS_FAHRZEUGMASSE',
+    'HZUL_NUTZLAST',
+    'HZUL_MINDEST',
+    'TECH_ZUL_MASSE',
+    'TECH_ZUL_ACHSL_1',
+    'TECH_ZUL_ACHSL_2',
+    'TECH_ZUL_ACHSL_3',
+    'TECH_ZUL_ACHSL_4',
+    'TECH_ZUL_ACHSGR_1',
+    'TECH_ZUL_ACHSGR_2',
+    'TECH_ZUL_STUETZ',
+    'VMAX_GEM',
+    'SPURW_1',
+    'SPURW_2',
+    'SPURW_3',
+]);
+
+function comparableText(value: string) {
+    return value
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^A-Z0-9]/gi, '')
+        .toUpperCase();
+}
+
+function firstNumber(value: string) {
+    if (/^(n\/?a|not applicable|nicht zutreffend|nie dotyczy|-|--|---)?$/i.test(value.trim())) {
+        return '';
+    }
+
+    const match = value.match(/([0-9][0-9\s.,]*)/);
+    const beforeNumber = match ? value.slice(0, match.index).trim() : '';
+    if (/\b(Masses|Masy|General construction|Technically|Track|Axles|Wheelbase|Length|Width|Height)\b/i.test(beforeNumber)) {
+        return '';
+    }
+
+    return match ? match[1].replace(/\s+/g, '').replace(',', '.').trim() : '';
+}
+
+function cleanBodyworkCode(value: string) {
+    const match = value.match(/\b([A-Z]{1,3})\s*-?\s*([0-9]{1,3})\b/i);
+    return match ? { letters: match[1].toUpperCase(), digits: match[2] } : { letters: '', digits: '' };
+}
+
 export class ExcelService {
     private getTemplateName(data: CocData) {
         const marke = data.Marke ? data.Marke.trim() : '';
@@ -50,19 +111,49 @@ export class ExcelService {
             'Typ': 'TYPE'
         };
         const aliasJsonKey = Object.entries(keyMapping).find(([, mappedGdbKey]) => mappedGdbKey === gdbKey)?.[0];
-        const value = data[gdbKey] ?? (aliasJsonKey ? data[aliasJsonKey] : undefined);
+        let value = data[gdbKey] ?? (aliasJsonKey ? data[aliasJsonKey] : undefined);
         const rawTextValue = typeof value === 'string' ? value.trim() : '';
-        const textValue = /^[:;.,\-\s]+$/.test(rawTextValue) ? '' : rawTextValue;
+        let textValue = /^[:;.,\-\s]+$/.test(rawTextValue) ? '' : rawTextValue;
         const confidence = options?.confidences?.[gdbKey];
         const threshold = options?.confidenceThreshold ?? 0.7;
         const uncertain = typeof confidence === 'number' && confidence < threshold;
 
-        if (uncertain && textValue) {
-            return `${textValue} ${options?.lowConfidenceMarker || '[???]'}`;
+        const manufacturer = comparableText(data.MARKE || data.Marke || '');
+        const isOneAxle = !firstNumber(data.TECH_ZUL_ACHSL_2 || '')
+            && !firstNumber(data.VERT_ACHSE_2 || '')
+            && !firstNumber(data.RADST_2 || '');
+
+        if (gdbKey === 'HANDNAME') {
+            const handName = comparableText(textValue);
+            return !handName || handName === manufacturer ? '' : textValue;
         }
 
-        if (textValue && options?.calculatedFields?.includes(gdbKey)) {
-            return `${textValue} [CALC]`;
+        if (gdbKey === 'SPURW_1' && isOneAxle && !firstNumber(textValue)) {
+            textValue = data.SPURW_2 || '';
+        }
+
+        if (gdbKey === 'SPURW_2' && isOneAxle) {
+            return '';
+        }
+
+        if (gdbKey === 'AUFBAU_EU_C') {
+            const code = cleanBodyworkCode(textValue || data.AUFBAU_NAT_C || '');
+            return code.letters || textValue;
+        }
+
+        if (gdbKey === 'AUFBAU_NAT_C') {
+            const code = cleanBodyworkCode(textValue || data.AUFBAU_EU_C || '');
+            return code.digits || textValue;
+        }
+
+        const numericField = NUMERIC_EXPORT_FIELDS.has(gdbKey);
+
+        if (numericField) {
+            textValue = firstNumber(textValue);
+        }
+
+        if (!numericField && uncertain && textValue) {
+            return `${textValue} ${options?.lowConfidenceMarker || '[???]'}`;
         }
 
         return textValue;
