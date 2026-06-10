@@ -11,6 +11,7 @@ type ExportOptions = {
     confidenceThreshold?: number;
     lowConfidenceMarker?: string;
     calculatedFields?: string[];
+    preserveAuthorityDefaults?: boolean;
 };
 
 type BatchExportDocument = {
@@ -55,6 +56,35 @@ const NUMERIC_EXPORT_FIELDS = new Set([
     'SPURW_3',
 ]);
 
+const AUTHORITY_DEFAULT_FIELDS = new Set([
+    'VERT_STUETZ',
+    'HZUL_NUTZLAST',
+    'HZUL_MINDEST',
+    'FARBE_C',
+    'KUNDENNr',
+    'TypSMail',
+]);
+
+const NIEWIADOW_B1_DEFAULT_FIELDS = new Set([
+    'AUSST_GENDOK',
+    'MARKE',
+    'TYPE',
+    'VAR',
+    'VERS',
+    'REVISION_GEN',
+    'DAT_GENDOK',
+    'VERT_STUETZ',
+    'HZUL_NUTZLAST',
+    'HZUL_MINDEST',
+    'TECH_ZUL_ACHSGR_1',
+    'RADREIFEN_ACHSE1',
+    'ANHVORR_GENZ',
+    'KENNW_ANHAENGEVORR',
+    'FARBE_C',
+    'KUNDENNr',
+    'TypSMail',
+]);
+
 function comparableText(value: string) {
     return value
         .normalize('NFD')
@@ -84,11 +114,14 @@ function cleanBodyworkCode(value: string) {
 
 export class ExcelService {
     private getTemplateName(data: CocData) {
-        const marke = data.Marke ? data.Marke.trim() : '';
+        const marke = comparableText(data.Marke || data.MARKE || '');
+        const type = (data.TYPE || data.Typ || '').trim().toLowerCase();
+        const fin = (data.FIN || '').trim().toUpperCase();
 
-        if (marke.toLowerCase().includes('drival') || marke.toLowerCase().includes('daltec')) return 'Drival_COC.xlsx';
-        if (marke.toLowerCase().includes('niewiadow')) return 'Niewiadow_COC.xlsx';
-        if (marke.toLowerCase().includes('tomplan')) return 'Tomplan_COC.xlsx';
+        if (marke.includes('DRIVAL') || marke.includes('DALTEC')) return 'Drival_COC.xlsx';
+        if (marke.includes('NIEWIADOW') && (type === 'b1' || fin.startsWith('SZRB'))) return 'Niewiadow_B1_COC.xlsx';
+        if (marke.includes('NIEWIADOW')) return 'Niewiadow_COC.xlsx';
+        if (marke.includes('TOMPLAN')) return 'Tomplan_COC.xlsx';
         return 'Drival_COC.xlsx';
     }
 
@@ -178,7 +211,17 @@ export class ExcelService {
                 const colAValue = cell.v.toString().trim();
                 
                 const targetCellAddress = xlsx.utils.encode_cell({ r: R, c: 3 }); // Column D
-                const value = this.valueForExport(data, colAValue, options);
+                const defaultRawValue = typeof ws[targetCellAddress]?.v === 'string' ? ws[targetCellAddress].v : '';
+                const hasDefaultValue = typeof ws[targetCellAddress]?.v === 'string' && ws[targetCellAddress].v.length > 0;
+                const preserveDefault = options?.preserveAuthorityDefaults
+                    && hasDefaultValue
+                    && (
+                        AUTHORITY_DEFAULT_FIELDS.has(colAValue)
+                        || (templateName === 'Niewiadow_B1_COC.xlsx' && NIEWIADOW_B1_DEFAULT_FIELDS.has(colAValue))
+                    );
+                const value = preserveDefault
+                    ? defaultRawValue
+                    : this.valueForExport(data, colAValue, options);
 
                 ws[targetCellAddress] = { t: 's', v: value };
                 console.log('[excel] mapped csv field:', { gdbKey: colAValue, targetCellAddress, value });
@@ -204,6 +247,17 @@ export class ExcelService {
         });
 
         return Buffer.from(`\uFEFF${csv}`, 'utf8');
+    }
+
+    generateAuthorityXlsxBuffer(data: CocData): Buffer {
+        const wb = this.buildWorkbook(data, { preserveAuthorityDefaults: true });
+        const buffer = xlsx.write(wb, {
+            type: 'buffer',
+            bookType: 'xlsx',
+            cellStyles: true,
+        });
+
+        return Buffer.from(buffer);
     }
 
     generateBatchXlsxBuffer(documents: BatchExportDocument[]): Buffer {
