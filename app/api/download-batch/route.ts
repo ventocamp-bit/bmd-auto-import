@@ -32,7 +32,7 @@ export async function GET() {
     return new NextResponse(new Uint8Array(bytes), {
         headers: {
             'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            'Content-Disposition': `attachment; filename="BMD_Sammelimport_${date}.xlsx"`,
+            'Content-Disposition': `attachment; filename="Behoerden_Sammelimport_${date}.xlsx"`,
         },
     });
 }

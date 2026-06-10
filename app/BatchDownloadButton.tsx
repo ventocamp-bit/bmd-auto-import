@@ -22,7 +22,7 @@ export function BatchDownloadButton({ disabled }: { disabled: boolean }) {
 
             const blob = await response.blob();
             const disposition = response.headers.get('content-disposition') || '';
-            const filename = disposition.match(/filename="([^"]+)"/)?.[1] || 'BMD_Sammelimport.xlsx';
+            const filename = disposition.match(/filename="([^"]+)"/)?.[1] || 'Behoerden_Sammelimport.xlsx';
             const url = window.URL.createObjectURL(blob);
             const link = document.createElement('a');
             link.href = url;
@@ -42,10 +42,10 @@ export function BatchDownloadButton({ disabled }: { disabled: boolean }) {
     return (
         <span className="download-inline">
             <button type="button" onClick={saveBatch} disabled={disabled || saving}>
-                {saving ? 'Lädt herunter' : 'Sammel-Excel herunterladen'}
+                {saving ? 'Laedt herunter' : 'Behoerden-Sammel-XLSX speichern'}
             </button>
             {savedPath ? <span className="download-status">Download gestartet: {savedPath}</span> : null}
-            {error ? <a className="button" href="/api/download-batch">Direkt öffnen</a> : null}
+            {error ? <a className="button" href="/api/download-batch">Direkt oeffnen</a> : null}
         </span>
     );
 }

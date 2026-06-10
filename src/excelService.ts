@@ -287,60 +287,67 @@ export class ExcelService {
     }
 
     generateBatchXlsxBuffer(documents: BatchExportDocument[]): Buffer {
-        const grouped = documents.reduce((result, document) => {
-            const templateName = this.getTemplateName(document.data);
-            if (!result[templateName]) {
-                result[templateName] = [];
+        if (documents.length === 0) {
+            throw new Error('No documents supplied for batch export');
+        }
+
+        const templateName = this.getTemplateName(documents[0].data);
+        const workbook = this.readTemplateWorkbook(templateName);
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+        const range = xlsx.utils.decode_range(sheet['!ref'] || 'A1:D100');
+        const templateValueCol = 3;
+
+        for (let documentIndex = 0; documentIndex < documents.length; documentIndex++) {
+            const document = documents[documentIndex];
+            const valueColumn = templateValueCol + documentIndex;
+
+            if (documentIndex > 0 && sheet['!cols']?.[templateValueCol]) {
+                sheet['!cols'][valueColumn] = { ...sheet['!cols'][templateValueCol] };
             }
-            result[templateName].push(document);
-            return result;
-        }, {} as Record<string, BatchExportDocument[]>);
 
-        const outputWorkbook = xlsx.utils.book_new();
-
-        for (const [templateName, templateDocuments] of Object.entries(grouped)) {
-            const templateWorkbook = this.readTemplateWorkbook(templateName);
-            const sourceSheetName = templateWorkbook.SheetNames[0];
-            const sourceSheet = templateWorkbook.Sheets[sourceSheetName];
-            const sheet = xlsx.utils.sheet_to_json(sourceSheet, { header: 1, blankrows: true }) as unknown[][];
-            const range = xlsx.utils.decode_range(sourceSheet['!ref'] || 'A1:D100');
-
-            for (let index = 0; index < templateDocuments.length; index++) {
-                const document = templateDocuments[index];
-                const valueColumn = 3 + index;
-                const header = document.data.FIN || document.originalName || document.id;
-
-                if (!sheet[0]) {
-                    sheet[0] = [];
+            for (let rowIndex = range.s.r; rowIndex <= range.e.r; rowIndex++) {
+                const gdbCellAddress = xlsx.utils.encode_cell({ r: rowIndex, c: 0 });
+                const gdbKey = String(sheet[gdbCellAddress]?.v || '').trim();
+                if (!gdbKey) {
+                    continue;
                 }
-                sheet[0][valueColumn] = header;
 
-                for (let rowIndex = range.s.r; rowIndex <= range.e.r; rowIndex++) {
-                    const gdbKey = String(sheet[rowIndex]?.[0] || '').trim();
-                    if (!gdbKey) {
-                        continue;
-                    }
-
-                    if (!sheet[rowIndex]) {
-                        sheet[rowIndex] = [];
-                    }
-
-                    sheet[rowIndex][valueColumn] = this.valueForExport(document.data, gdbKey, {
+                const sourceValueAddress = xlsx.utils.encode_cell({ r: rowIndex, c: templateValueCol });
+                const targetValueAddress = xlsx.utils.encode_cell({ r: rowIndex, c: valueColumn });
+                const sourceCell = sheet[sourceValueAddress];
+                const defaultRawValue = typeof sourceCell?.v === 'string' ? sourceCell.v : '';
+                const hasDefaultValue = typeof sourceCell?.v === 'string' && sourceCell.v.length > 0;
+                const preserveDefault = hasDefaultValue
+                    && (
+                        AUTHORITY_DEFAULT_FIELDS.has(gdbKey)
+                        || (templateName === 'Niewiadow_B1_COC.xlsx' && NIEWIADOW_B1_DEFAULT_FIELDS.has(gdbKey))
+                    );
+                const value = preserveDefault
+                    ? defaultRawValue
+                    : this.valueForExport(document.data, gdbKey, {
                         confidences: document.confidences,
                         lowConfidenceMarker: '[???]',
                         calculatedFields: document.calculatedFields,
                     });
-                }
-            }
 
-            const outputSheet = xlsx.utils.aoa_to_sheet(sheet);
-            outputSheet['!cols'] = sourceSheet['!cols'];
-            outputSheet['!rows'] = sourceSheet['!rows'];
-            const sheetName = templateName.replace(/_COC\.xlsx$/i, '').slice(0, 31);
-            xlsx.utils.book_append_sheet(outputWorkbook, outputSheet, sheetName);
+                sheet[targetValueAddress] = {
+                    ...(sourceCell?.s ? { s: sourceCell.s } : {}),
+                    t: 's',
+                    v: value,
+                };
+            }
         }
 
-        const buffer = xlsx.write(outputWorkbook, {
+        sheet['!ref'] = xlsx.utils.encode_range({
+            s: range.s,
+            e: {
+                r: range.e.r,
+                c: Math.max(range.e.c, templateValueCol + documents.length - 1),
+            },
+        });
+
+        const buffer = xlsx.write(workbook, {
             type: 'buffer',
             bookType: 'xlsx',
             cellStyles: true,
