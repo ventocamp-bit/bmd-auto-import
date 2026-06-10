@@ -46,25 +46,20 @@ export default function UploadPage() {
         const retryDelays = [3000, 8000, 15000, 30000];
 
         for (let attempt = 1; attempt <= retryDelays.length + 1; attempt++) {
-            const processResponse = await fetch('/api/process-pending', {
+            const processResponse = await fetch('/api/process-document', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ids: [id] }),
+                body: JSON.stringify({ id }),
             });
 
             const processResult = await processResponse.json().catch(() => ({}));
-            const innerResults = Array.isArray(processResult.results) ? processResult.results : [];
-            const innerOk = innerResults.length > 0
-                && innerResults.every((result: any) => Number(result.status) >= 200 && Number(result.status) < 300);
 
-            if (processResponse.ok && innerOk) {
+            if (processResponse.ok) {
                 return { ok: true };
             }
 
-            const failedResult = innerResults.find((result: any) => Number(result.status) >= 400);
             lastMessage = readableMessage(processResult.error)
-                || readableMessage(failedResult?.result?.error)
-                || readableMessage(failedResult?.result?.message)
+                || readableMessage(processResult.message)
                 || lastMessage;
 
             if (attempt <= retryDelays.length) {

@@ -668,19 +668,20 @@ export class GeminiService {
         prompt: string,
         config?: Record<string, unknown>
     ) {
-        const models = process.env.GEMINI_MODEL
+        const models = Array.from(new Set(process.env.GEMINI_MODEL
             ? [process.env.GEMINI_MODEL, 'gemini-2.5-flash-lite', 'gemini-2.5-flash']
-            : ['gemini-2.5-flash-lite', 'gemini-2.5-flash'];
+            : ['gemini-2.5-flash-lite', 'gemini-2.5-flash']))
+            .slice(0, 2);
         let response: any = null;
         let lastError: unknown = null;
 
         generationLoop:
         for (const model of models) {
-            for (let attempt = 1; attempt <= 2; attempt++) {
-                const abortSignal = AbortSignal.timeout(55000);
+            for (let attempt = 1; attempt <= 1; attempt++) {
+                const abortSignal = AbortSignal.timeout(25000);
                 const timeoutPromise = new Promise<never>((_, reject) => {
                     abortSignal.addEventListener('abort', () => {
-                        reject(new Error(`Timeout during Gemini request with ${model}: 55000ms exceeded.`));
+                        reject(new Error(`Timeout during Gemini request with ${model}: 25000ms exceeded.`));
                     });
                 });
 
