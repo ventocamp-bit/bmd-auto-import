@@ -417,6 +417,22 @@ function formatDerivedNumber(value: number) {
     return Number.isInteger(value) ? String(value) : String(Math.round(value * 100) / 100);
 }
 
+function roundUpToNearest(value: number, step: number) {
+    return Math.ceil(value / step) * step;
+}
+
+function calculateMinimumGrossMass(technicallyPermissibleMass: number, actualMass: number) {
+    if (technicallyPermissibleMass <= 0 || actualMass <= 0 || technicallyPermissibleMass < actualMass) {
+        return null;
+    }
+
+    const payload = technicallyPermissibleMass - actualMass;
+    const minimumMass = actualMass + payload * 0.4;
+    const rounded = roundUpToNearest(minimumMass, 50);
+
+    return Math.min(rounded, technicallyPermissibleMass);
+}
+
 function extractAxleSpacingByLabels(lines: string[], ocrText: string) {
     const compact = ocrText.replace(/\s+/g, ' ');
     const inlineBlock = compact.match(/4\.1\.\s*Axle spacing:\s*(.+?)(?=\s*5\.\s*Length|\s*6\.\s*Width|\s*Masses\b)/i)?.[1] || '';
@@ -639,13 +655,22 @@ function applyOcrCorrections(data: CocData, confidences: Record<string, number>,
     }
 
     const technicallyPermissibleMass = parseNumericField(data.TECH_ZUL_MASSE || '');
-    const runningOrderMass = parseNumericField(data.MASSE_FAHRB || '');
-    if (!data.HZUL_NUTZLAST && technicallyPermissibleMass !== null && runningOrderMass !== null) {
+    const runningOrderMass = parseNumericField(data.TATS_FAHRZEUGMASSE || '') ?? parseNumericField(data.MASSE_FAHRB || '');
+    if (technicallyPermissibleMass !== null && runningOrderMass !== null) {
         const payload = technicallyPermissibleMass - runningOrderMass;
         if (payload >= 0) {
-            data.HZUL_NUTZLAST = formatDerivedNumber(payload);
-            confidences.HZUL_NUTZLAST = Math.max(confidences.HZUL_NUTZLAST || 0, 0.9);
-            calculatedFields.push('HZUL_NUTZLAST');
+            if (!data.HZUL_NUTZLAST) {
+                data.HZUL_NUTZLAST = formatDerivedNumber(payload);
+                confidences.HZUL_NUTZLAST = Math.max(confidences.HZUL_NUTZLAST || 0, 0.9);
+                calculatedFields.push('HZUL_NUTZLAST');
+            }
+
+            const minimumGrossMass = calculateMinimumGrossMass(technicallyPermissibleMass, runningOrderMass);
+            if (minimumGrossMass !== null) {
+                data.HZUL_MINDEST = formatDerivedNumber(minimumGrossMass);
+                confidences.HZUL_MINDEST = Math.max(confidences.HZUL_MINDEST || 0, 0.9);
+                calculatedFields.push('HZUL_MINDEST');
+            }
         }
     }
 

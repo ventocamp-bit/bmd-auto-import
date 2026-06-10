@@ -269,8 +269,10 @@ export class ExcelService {
                 const hasDefaultValue = typeof ws[targetCellAddress]?.v === 'string'
                     && ws[targetCellAddress].v.length > 0
                     && !isAuthorityInstructionText(ws[targetCellAddress].v);
+                const hasExtractedValue = typeof data[colAValue] === 'string' && data[colAValue].trim().length > 0;
                 const preserveDefault = options?.preserveAuthorityDefaults
                     && hasDefaultValue
+                    && !hasExtractedValue
                     && (
                         AUTHORITY_DEFAULT_FIELDS.has(colAValue)
                         || (templateName === 'Niewiadow_B1_COC.xlsx' && NIEWIADOW_B1_DEFAULT_FIELDS.has(colAValue))
@@ -350,7 +352,9 @@ export class ExcelService {
                 const hasDefaultValue = typeof sourceCell?.v === 'string'
                     && sourceCell.v.length > 0
                     && !isAuthorityInstructionText(sourceCell.v);
+                const hasExtractedValue = typeof document.data[gdbKey] === 'string' && document.data[gdbKey].trim().length > 0;
                 const preserveDefault = hasDefaultValue
+                    && !hasExtractedValue
                     && (
                         AUTHORITY_DEFAULT_FIELDS.has(gdbKey)
                         || (templateName === 'Niewiadow_B1_COC.xlsx' && NIEWIADOW_B1_DEFAULT_FIELDS.has(gdbKey))
