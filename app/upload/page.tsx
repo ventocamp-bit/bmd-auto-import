@@ -10,34 +10,65 @@ export default function UploadPage() {
     const [phase, setPhase] = useState<Phase>('idle');
     const [error, setError] = useState<string | null>(null);
     const [selectedCount, setSelectedCount] = useState(0);
+    const [uploadedCount, setUploadedCount] = useState(0);
     const [processedCount, setProcessedCount] = useState(0);
     const [totalToProcess, setTotalToProcess] = useState(0);
 
     async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
         event.preventDefault();
         setError(null);
+        setUploadedCount(0);
         setProcessedCount(0);
         setTotalToProcess(0);
         setPhase('uploading');
 
-        const formData = new FormData(event.currentTarget);
-        const uploadResponse = await fetch('/api/upload', {
-            method: 'POST',
-            body: formData,
-        });
+        const form = event.currentTarget;
+        const fileInput = form.elements.namedItem('files') as HTMLInputElement | null;
+        const uploadedByInput = form.elements.namedItem('uploadedBy') as HTMLInputElement | null;
+        const allowDuplicateInput = form.elements.namedItem('allowDuplicateTestRun') as HTMLInputElement | null;
+        const files = Array.from(fileInput?.files || []);
 
-        const uploadResult = await uploadResponse.json();
-
-        if (!uploadResponse.ok) {
+        if (files.length === 0) {
             setPhase('idle');
-            setError(uploadResult.message || 'Upload fehlgeschlagen');
+            setError('Bitte mindestens eine Datei auswählen.');
             return;
+        }
+
+        const uploadedIds: string[] = [];
+        let duplicateCount = 0;
+
+        for (let index = 0; index < files.length; index++) {
+            const fileFormData = new FormData();
+            fileFormData.append('files', files[index]);
+            if (uploadedByInput?.value) {
+                fileFormData.append('uploadedBy', uploadedByInput.value);
+            }
+            if (allowDuplicateInput?.checked) {
+                fileFormData.append('allowDuplicateTestRun', 'on');
+            }
+
+            const uploadResponse = await fetch('/api/upload', {
+                method: 'POST',
+                body: fileFormData,
+            });
+
+            const uploadResult = await uploadResponse.json().catch(() => ({}));
+
+            if (!uploadResponse.ok && uploadResponse.status !== 409) {
+                setPhase('idle');
+                setError(uploadResult.message || `Upload fehlgeschlagen bei Datei ${index + 1}/${files.length}`);
+                return;
+            }
+
+            if (Array.isArray(uploadResult.ids)) {
+                uploadedIds.push(...uploadResult.ids);
+            }
+            duplicateCount += Array.isArray(uploadResult.duplicates) ? uploadResult.duplicates.length : 0;
+            setUploadedCount(index + 1);
         }
 
         setPhase('processing');
 
-        const uploadedIds = Array.isArray(uploadResult.ids) ? uploadResult.ids : [];
-        const duplicateCount = Array.isArray(uploadResult.duplicates) ? uploadResult.duplicates.length : 0;
         setTotalToProcess(uploadedIds.length);
 
         if (uploadedIds.length === 0) {
@@ -66,11 +97,12 @@ export default function UploadPage() {
 
         setPhase('idle');
         setSelectedCount(0);
+        setUploadedCount(0);
         setProcessedCount(0);
         setTotalToProcess(0);
 
-        if (uploadResult.count === 1 && uploadResult.id) {
-            router.push(`/documents/${uploadResult.id}`);
+        if (uploadedIds.length === 1) {
+            router.push(`/documents/${uploadedIds[0]}`);
             return;
         }
 
@@ -79,12 +111,13 @@ export default function UploadPage() {
 
     const busy = phase !== 'idle';
     const buttonText = phase === 'uploading'
-        ? 'Upload läuft'
+        ? `Upload läuft ${uploadedCount}/${selectedCount}`
         : phase === 'processing'
             ? `Wird verarbeitet ${processedCount}/${totalToProcess || selectedCount}`
             : 'Hochladen und verarbeiten';
-    const progressTotal = totalToProcess || selectedCount;
-    const progressPercent = progressTotal > 0 ? Math.round((processedCount / progressTotal) * 100) : 0;
+    const progressTotal = phase === 'uploading' ? selectedCount : totalToProcess || selectedCount;
+    const progressCurrent = phase === 'uploading' ? uploadedCount : processedCount;
+    const progressPercent = progressTotal > 0 ? Math.round((progressCurrent / progressTotal) * 100) : 0;
 
     return (
         <>
@@ -125,10 +158,14 @@ export default function UploadPage() {
                         <span>Duplikate als neuen Testlauf zulassen</span>
                     </label>
                     {error ? <p style={{ color: 'var(--danger)' }}>{error}</p> : null}
-                    {phase === 'processing' ? (
+                    {phase !== 'idle' ? (
                         <div className="progress-block">
                             <div className="progress-meta">
-                                <span>{processedCount} von {progressTotal} Dokumenten verarbeitet.</span>
+                                <span>
+                                    {phase === 'uploading'
+                                        ? `${uploadedCount} von ${progressTotal} Dokumenten hochgeladen.`
+                                        : `${processedCount} von ${progressTotal} Dokumenten verarbeitet.`}
+                                </span>
                                 <span>{progressPercent}%</span>
                             </div>
                             <div className="progress-track" aria-label="Verarbeitungsfortschritt">

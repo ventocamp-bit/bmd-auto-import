@@ -16,7 +16,7 @@ export interface CocExtractionResult {
     calculatedFields: string[];
 }
 
-export const COC_EXTRACTION_PROMPT_VERSION = '2026-06-07-bmd-csv-v10-markers';
+export const COC_EXTRACTION_PROMPT_VERSION = '2026-06-10-bmd-csv-v11-clean-german';
 
 export const GDB_FIELD_KEYS = [
     'FIN',
@@ -174,9 +174,10 @@ Use exactly the response schema. Do not add, omit, rename, or reorder business k
 For numeric mm/kg/km/h fields, return only the number without unit.
 Return empty string with confidence 0 for values that are not present, N/A, not applicable, or unreadable.
 Preserve names, manufacturer spelling, diacritics, approval numbers, tyre strings, and email addresses exactly.
+Translate explanatory labels to German when labels are unavoidable, but field values must not contain Polish, English, or German label text.
 FIN must be a 17-character vehicle identification number when visible.
 Do not infer KUNDENNr or TypSMail from unrelated contact data.
-Do not swap COC 44 and 45.1: ANHVORR_GENZ is the E/approval number; KENNW_ANHAENGEVORR contains D/V/S/U characteristic values.
+Do not swap COC 44 and 45.1: ANHVORR_GENZ is only the E/approval number(s), without labels; KENNW_ANHAENGEVORR contains D/V/S/U characteristic values.
 `;
 
 const FEW_SHOT_EXAMPLES = `
@@ -468,6 +469,18 @@ function extractTyreWheelByAxle(ocrText: string, axle: number) {
     return value && /R\d{2}/i.test(value) ? value : '';
 }
 
+function cleanHitchApprovalValue(value: string) {
+    return value
+        .replace(/\b(Approval number or approval mark of coupling device|Genehmigungsnummer oder -zeichen der Anhaengevorrichtung|Genehmigungsnummer oder -zeichen der Anhängevorrichtung)\b[^:;]*:\s*/gi, '')
+        .replace(/\/?\s*Numer\s+[^:;]*homologacji[^:;]*:\s*/gi, '')
+        .replace(/\b(Drawbar|Overrunning device|Coupling head)\s*:\s*/gi, '')
+        .replace(/\b55RO\b/g, '55R0')
+        .replace(/\s*;\s*/g, '; ')
+        .replace(/\s+/g, ' ')
+        .replace(/^[/:\s]+/, '')
+        .trim();
+}
+
 function extractHitchApproval(ocrText: string) {
     const compact = ocrText.replace(/\s+/g, ' ');
     const block = compact.match(/44\.\s*Approval number or approval mark of coupling device.*?:\s*(.+?)(?=\s*45\.1\.|\s*Characteristics values|\s*Miscellaneous|\s*50\.)/i)?.[1] || '';
@@ -475,12 +488,7 @@ function extractHitchApproval(ocrText: string) {
         return '';
     }
 
-    return block
-        .replace(/\b(Drawbar|Overrunning device|Coupling head)\s*:\s*/gi, '')
-        .replace(/\b55RO\b/g, '55R0')
-        .replace(/\s*;\s*/g, '; ')
-        .replace(/\s+/g, ' ')
-        .trim();
+    return cleanHitchApprovalValue(block);
 }
 
 function extractHitchCharacteristics(ocrText: string) {
@@ -625,6 +633,8 @@ function applyOcrCorrections(data: CocData, confidences: Record<string, number>,
         data.ANHVORR_GENZ = hitchApproval;
         confidences.ANHVORR_GENZ = Math.max(confidences.ANHVORR_GENZ || 0, 0.95);
     }
+
+    data.ANHVORR_GENZ = cleanHitchApprovalValue(data.ANHVORR_GENZ || '');
 
     if (/\b55R00\*01-4422\b/i.test(data.ANHVORR_GENZ || '')) {
         confidences.ANHVORR_GENZ = Math.min(confidences.ANHVORR_GENZ || 0.5, 0.5);
@@ -813,6 +823,8 @@ ${JSON.stringify(SCHEMA_EXAMPLE, null, 2)}
                 data.KENNW_ANHAENGEVORR = data.ANHVORR_GENZ;
                 data.ANHVORR_GENZ = approvalNumber;
             }
+
+            data.ANHVORR_GENZ = cleanHitchApprovalValue(data.ANHVORR_GENZ || '');
 
             const confidences = fields.reduce((result, key) => {
                 result[key] = normalizeField(parsed, key).confidence;
