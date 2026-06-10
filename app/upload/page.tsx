@@ -10,10 +10,6 @@ type ProcessAttemptResult = {
     message?: string;
 };
 
-function wait(ms: number) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 function readableMessage(value: unknown) {
     if (!value) {
         return '';
@@ -42,33 +38,24 @@ export default function UploadPage() {
     const [currentFileName, setCurrentFileName] = useState('');
 
     async function processDocumentWithRetry(id: string): Promise<ProcessAttemptResult> {
-        let lastMessage = 'Verarbeitung fehlgeschlagen';
-        const retryDelays = [3000, 8000, 15000, 30000];
+        const processResponse = await fetch('/api/process-document', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id }),
+        });
 
-        for (let attempt = 1; attempt <= retryDelays.length + 1; attempt++) {
-            const processResponse = await fetch('/api/process-document', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id }),
-            });
+        const processResult = await processResponse.json().catch(() => ({}));
 
-            const processResult = await processResponse.json().catch(() => ({}));
-
-            if (processResponse.ok) {
-                return { ok: true };
-            }
-
-            lastMessage = readableMessage(processResult.error)
-                || readableMessage(processResult.message)
-                || lastMessage;
-
-            if (attempt <= retryDelays.length) {
-                setCurrentStep(`Retry ${attempt}/${retryDelays.length} nach Gemini-Fehler`);
-                await wait(retryDelays[attempt - 1]);
-            }
+        if (processResponse.ok) {
+            return { ok: true };
         }
 
-        return { ok: false, message: lastMessage };
+        return {
+            ok: false,
+            message: readableMessage(processResult.error)
+                || readableMessage(processResult.message)
+                || 'Verarbeitung fehlgeschlagen',
+        };
     }
 
     async function onSubmit(event: React.FormEvent<HTMLFormElement>) {

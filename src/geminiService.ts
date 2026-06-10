@@ -292,8 +292,11 @@ function isTransientGeminiError(error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     return message.includes('503')
         || message.includes('429')
+        || message.includes('404')
         || message.includes('UNAVAILABLE')
         || message.includes('RESOURCE_EXHAUSTED')
+        || message.includes('NOT_FOUND')
+        || message.toLowerCase().includes('is not found')
         || message.toLowerCase().includes('high demand')
         || message.toLowerCase().includes('quota')
         || message.toLowerCase().includes('timeout');
@@ -710,11 +713,10 @@ export class GeminiService {
             .filter(Boolean);
         const models = Array.from(new Set([
             ...configuredModels,
-            'gemini-3.5-flash',
-            'gemini-3.1-flash-lite',
             'gemini-2.5-flash-lite',
             'gemini-2.5-flash',
-            'gemini-flash-lite-latest',
+            'gemini-3.1-flash-lite',
+            'gemini-3.5-flash',
             'gemini-flash-latest',
             'gemini-2.0-flash-lite',
             'gemini-2.0-flash',
@@ -729,10 +731,10 @@ export class GeminiService {
 
             for (const model of models) {
                 for (let attempt = 1; attempt <= 1; attempt++) {
-                    const abortSignal = AbortSignal.timeout(25000);
+                    const abortSignal = AbortSignal.timeout(18000);
                     const timeoutPromise = new Promise<never>((_, reject) => {
                         abortSignal.addEventListener('abort', () => {
-                            reject(new Error(`Timeout during Gemini request with ${model}: 25000ms exceeded.`));
+                            reject(new Error(`Timeout during Gemini request with ${model}: 18000ms exceeded.`));
                         });
                     });
 
@@ -778,7 +780,7 @@ export class GeminiService {
                             break;
                         }
 
-                        await delay(750 * attempt);
+                        await delay(150 * attempt);
                     }
                 }
             }
