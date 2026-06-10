@@ -652,14 +652,21 @@ export function repairCocDataWithOcr(data: CocData, confidences: Record<string, 
 }
 
 export class GeminiService {
-    private ai: GoogleGenAI;
+    private apiKeys: string[];
 
     constructor() {
-        const apiKey = process.env.GEMINI_API_KEY;
-        if (!apiKey) {
-            throw new Error('GEMINI_API_KEY is missing');
+        const apiKeys = [
+            ...(process.env.GEMINI_API_KEYS || '').split(','),
+            process.env.GEMINI_API_KEY || '',
+        ]
+            .map((key) => key.trim())
+            .filter(Boolean);
+
+        this.apiKeys = Array.from(new Set(apiKeys));
+
+        if (this.apiKeys.length === 0) {
+            throw new Error('GEMINI_API_KEY or GEMINI_API_KEYS is missing');
         }
-        this.ai = new GoogleGenAI({ apiKey });
     }
 
     private async generateDocumentContent(
@@ -676,56 +683,62 @@ export class GeminiService {
         let lastError: unknown = null;
 
         generationLoop:
-        for (const model of models) {
-            for (let attempt = 1; attempt <= 1; attempt++) {
-                const abortSignal = AbortSignal.timeout(25000);
-                const timeoutPromise = new Promise<never>((_, reject) => {
-                    abortSignal.addEventListener('abort', () => {
-                        reject(new Error(`Timeout during Gemini request with ${model}: 25000ms exceeded.`));
-                    });
-                });
+        for (let keyIndex = 0; keyIndex < this.apiKeys.length; keyIndex++) {
+            const ai = new GoogleGenAI({ apiKey: this.apiKeys[keyIndex] });
 
-                try {
-                    console.log('[gemini] model attempt:', {
-                        model,
-                        attempt,
-                        responseMimeType: String(config?.responseMimeType || 'text/plain'),
-                        hasSchema: Boolean(config?.responseJsonSchema || config?.responseSchema),
+            for (const model of models) {
+                for (let attempt = 1; attempt <= 1; attempt++) {
+                    const abortSignal = AbortSignal.timeout(25000);
+                    const timeoutPromise = new Promise<never>((_, reject) => {
+                        abortSignal.addEventListener('abort', () => {
+                            reject(new Error(`Timeout during Gemini request with ${model}: 25000ms exceeded.`));
+                        });
                     });
-                    response = await Promise.race([
-                        this.ai.models.generateContent({
+
+                    try {
+                        console.log('[gemini] model attempt:', {
                             model,
-                            contents: [
-                                {
-                                    role: 'user',
-                                    parts: [
-                                        { inlineData: { data: base64Document, mimeType } },
-                                        { text: prompt }
-                                    ]
-                                }
-                            ],
-                            config: config as any,
-                        }),
-                        timeoutPromise,
-                    ]);
-                    break generationLoop;
-                } catch (error) {
-                    lastError = error;
-                    console.error('[gemini] model attempt failed:', {
-                        model,
-                        attempt,
-                        message: error instanceof Error ? error.message : String(error),
-                    });
+                            attempt,
+                            keyIndex,
+                            responseMimeType: String(config?.responseMimeType || 'text/plain'),
+                            hasSchema: Boolean(config?.responseJsonSchema || config?.responseSchema),
+                        });
+                        response = await Promise.race([
+                            ai.models.generateContent({
+                                model,
+                                contents: [
+                                    {
+                                        role: 'user',
+                                        parts: [
+                                            { inlineData: { data: base64Document, mimeType } },
+                                            { text: prompt }
+                                        ]
+                                    }
+                                ],
+                                config: config as any,
+                            }),
+                            timeoutPromise,
+                        ]);
+                        break generationLoop;
+                    } catch (error) {
+                        lastError = error;
+                        console.error('[gemini] model attempt failed:', {
+                            model,
+                            attempt,
+                            keyIndex,
+                            message: error instanceof Error ? error.message : String(error),
+                        });
 
-                    if (!isTransientGeminiError(error)) {
-                        throw error;
+                        if (!isTransientGeminiError(error)) {
+                            throw error;
+                        }
+
+                        if (isQuotaGeminiError(error)) {
+                            break;
+                        }
+
+                        await delay(750 * attempt);
                     }
-
-                    if (isQuotaGeminiError(error)) {
-                        break;
-                    }
-
-                    await delay(750 * attempt);
                 }
             }
         }
