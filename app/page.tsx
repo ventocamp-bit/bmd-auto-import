@@ -99,12 +99,12 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
                                     <td><Link className="button" href={`/documents/${doc.id}`}>Öffnen</Link></td>
                                     {!showArchive ? (
                                         <td>
-                                            {doc.status === 'success' ? (
-                                                <form action="/api/archive-document" method="post">
-                                                    <input type="hidden" name="id" value={doc.id} />
-                                                    <button type="submit">Geprüft ablegen</button>
-                                                </form>
-                                            ) : null}
+                                            <form action="/api/archive-document" method="post">
+                                                <input type="hidden" name="id" value={doc.id} />
+                                                <button type="submit">
+                                                    {doc.status === 'success' ? 'Geprüft ablegen' : 'Aus Liste entfernen'}
+                                                </button>
+                                            </form>
                                         </td>
                                     ) : null}
                                 </tr>
