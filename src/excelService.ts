@@ -112,6 +112,28 @@ function cleanBodyworkCode(value: string) {
     return match ? { letters: match[1].toUpperCase(), digits: match[2] } : { letters: '', digits: '' };
 }
 
+function cleanHitchCharacteristicValue(value: string) {
+    const compact = value
+        .replace(/\b(Characteristics values|Kennwerte der Anhaengevorrichtung|Kennwerte der Anhängvorrichtung|Kennwerte der Anhängevorrichtung|Wartości charakterystyczne)\b[^:;]*:\s*/gi, '')
+        .replace(/---+/g, '...')
+        .replace(/\s+/g, ' ')
+        .trim();
+    const parts: string[] = [];
+    const normalized = compact.replace(/\s*\/\s*/g, '; ');
+
+    for (const match of normalized.matchAll(/\b([DVSU])\s*[=:]\s*([^;]+)/gi)) {
+        const label = match[1].toUpperCase();
+        const raw = match[2].trim().replace(/^[:;\s]+|[:;\s]+$/g, '');
+        if (!raw || /\.{2,}/.test(raw) || !/\d/.test(raw)) {
+            continue;
+        }
+
+        parts.push(`${label}: ${raw}`);
+    }
+
+    return parts.length > 0 ? parts.join('; ') : compact.replace(/^[:;\s]+/, '');
+}
+
 export class ExcelService {
     private getTemplateName(data: CocData) {
         const marke = comparableText(data.Marke || data.MARKE || '');
@@ -177,6 +199,10 @@ export class ExcelService {
         if (gdbKey === 'AUFBAU_NAT_C') {
             const code = cleanBodyworkCode(textValue || data.AUFBAU_EU_C || '');
             return code.digits || textValue;
+        }
+
+        if (gdbKey === 'KENNW_ANHAENGEVORR') {
+            return cleanHitchCharacteristicValue(textValue);
         }
 
         const numericField = NUMERIC_EXPORT_FIELDS.has(gdbKey);

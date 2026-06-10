@@ -126,7 +126,7 @@ const FIELD_DEFINITIONS: Record<string, string> = {
     AUFBAU_EU_C: 'COC 38 Code des Aufbaus, 1. Teil Buchstaben',
     AUFBAU_NAT_C: 'COC 38 Code des Aufbaus, 2. Teil Ziffern',
     ANHVORR_GENZ: 'COC 44 Genehmigungsnummer oder -zeichen der Anhaengevorrichtung, z.B. E1 55R-012671',
-    KENNW_ANHAENGEVORR: 'COC 45.1 Kennwerte der Anhaengevorrichtung, z.B. D:, V:, S:, U:. Nicht mit COC 44 vertauschen.',
+    KENNW_ANHAENGEVORR: 'COC 45.1 Kennwerte der Anhaengevorrichtung, z.B. D:, V:, S:, U:. Nicht mit COC 44 vertauschen. Leere Platzhalter wie V: ... oder U: ... weglassen.',
     FARBE_C: 'Farbe des Fahrzeugs, wenn angegeben',
     KUNDENNr: 'Kundennummer bei WVTA, nicht aus dem COC raten',
     TypSMail: 'E-Mail fuer Einmeldebestaetigung, nicht aus dem COC raten',
@@ -177,7 +177,7 @@ Preserve names, manufacturer spelling, diacritics, approval numbers, tyre string
 Translate explanatory labels to German when labels are unavoidable, but field values must not contain Polish, English, or German label text.
 FIN must be a 17-character vehicle identification number when visible.
 Do not infer KUNDENNr or TypSMail from unrelated contact data.
-Do not swap COC 44 and 45.1: ANHVORR_GENZ is only the E/approval number(s), without labels; KENNW_ANHAENGEVORR contains D/V/S/U characteristic values.
+Do not swap COC 44 and 45.1: ANHVORR_GENZ is only the E/approval number(s), without labels; KENNW_ANHAENGEVORR contains only real D/V/S/U characteristic values. Omit empty placeholders like V: ... and U: ....
 `;
 
 const FEW_SHOT_EXAMPLES = `
@@ -236,6 +236,10 @@ function normalizeValue(value: string, key: FieldName) {
         return '';
     }
 
+    if (key === 'KENNW_ANHAENGEVORR') {
+        return cleanHitchCharacteristicValue(trimmed);
+    }
+
     if (key === 'TYPE' || key === 'VAR' || key === 'VERS') {
         return trimmed
             .replace(/[Т]/g, 'T')
@@ -260,6 +264,28 @@ function normalizeValue(value: string, key: FieldName) {
     }
 
     return trimmed;
+}
+
+function cleanHitchCharacteristicValue(value: string) {
+    const compact = value
+        .replace(/\b(Characteristics values|Kennwerte der Anhaengevorrichtung|Kennwerte der Anhängvorrichtung|Kennwerte der Anhängevorrichtung|Wartości charakterystyczne)\b[^:;]*:\s*/gi, '')
+        .replace(/---+/g, '...')
+        .replace(/\s+/g, ' ')
+        .trim();
+    const parts: string[] = [];
+    const normalized = compact.replace(/\s*\/\s*/g, '; ');
+
+    for (const match of normalized.matchAll(/\b([DVSU])\s*[=:]\s*([^;]+)/gi)) {
+        const label = match[1].toUpperCase();
+        const raw = match[2].trim().replace(/^[:;\s]+|[:;\s]+$/g, '');
+        if (!raw || /\.{2,}/.test(raw) || !/\d/.test(raw)) {
+            continue;
+        }
+
+        parts.push(`${label}: ${raw}`);
+    }
+
+    return parts.length > 0 ? parts.join('; ') : compact.replace(/^[:;\s]+/, '');
 }
 
 function isTransientGeminiError(error: unknown) {
@@ -538,7 +564,7 @@ function extractHitchCharacteristics(ocrText: string) {
         }
     }
 
-    return values.join(' ').replace(/---+/g, '...').replace(/\s+/g, ' ').replace(/^[:;\s]+/, '').trim();
+    return cleanHitchCharacteristicValue(values.join(' '));
 }
 
 function applyOcrCorrections(data: CocData, confidences: Record<string, number>, ocrText: string) {
@@ -624,7 +650,7 @@ function applyOcrCorrections(data: CocData, confidences: Record<string, number>,
         || firstMatch(ocrText, /45\.1\.\s*Characteristics values[^:\n]*:\s*([^\r\n]+)/i)
         || firstMatch(ocrText, /45\.1\.[^\n]*Warto[^\n]*charakterystyczne[^:\n]*:\s*([^\r\n]+)/i);
     if (hitchCharacteristics) {
-        data.KENNW_ANHAENGEVORR = hitchCharacteristics;
+        data.KENNW_ANHAENGEVORR = cleanHitchCharacteristicValue(hitchCharacteristics);
         confidences.KENNW_ANHAENGEVORR = Math.max(confidences.KENNW_ANHAENGEVORR || 0, 0.95);
     }
 
@@ -635,6 +661,7 @@ function applyOcrCorrections(data: CocData, confidences: Record<string, number>,
     }
 
     data.ANHVORR_GENZ = cleanHitchApprovalValue(data.ANHVORR_GENZ || '');
+    data.KENNW_ANHAENGEVORR = cleanHitchCharacteristicValue(data.KENNW_ANHAENGEVORR || '');
 
     if (/\b55R00\*01-4422\b/i.test(data.ANHVORR_GENZ || '')) {
         confidences.ANHVORR_GENZ = Math.min(confidences.ANHVORR_GENZ || 0.5, 0.5);
@@ -783,7 +810,7 @@ Strict rules:
 - For missing non-applicable second/third/fourth axle fields, return empty string with confidence 0.
 - For COC 4.1 axle spacing tables, map label "1-2" to RADST_2 and label "2-3" to RADST_3. Do not put the "0-1" value into RADST_2.
 - For tyre/wheel fields, return only the tyre/wheel combination, without "axle 1", "axle 2", or the COC label text.
-- For COC 45.1, include all D/V/S/U characteristic lines from Remarks when the 45.1 field points there.
+- For COC 45.1, include only real D/V/S/U characteristic values from Remarks when the 45.1 field points there. Do not output empty placeholders like "V: ..." or "U: ..."; if only D and S are real, output for example "D: 7,19 kN; S: 75 kg".
 
 ${FEW_SHOT_EXAMPLES}
 
@@ -839,6 +866,7 @@ ${JSON.stringify(SCHEMA_EXAMPLE, null, 2)}
             }
 
             data.ANHVORR_GENZ = cleanHitchApprovalValue(data.ANHVORR_GENZ || '');
+            data.KENNW_ANHAENGEVORR = cleanHitchCharacteristicValue(data.KENNW_ANHAENGEVORR || '');
 
             const confidences = fields.reduce((result, key) => {
                 result[key] = normalizeField(parsed, key).confidence;

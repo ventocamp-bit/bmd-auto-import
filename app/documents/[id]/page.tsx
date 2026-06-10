@@ -104,6 +104,84 @@ const FIELD_LABELS: Record<string, string> = {
     TypSMail: 'E-Mail Einmeldebestätigung',
 };
 
+const COC_POINTS: Record<string, string> = {
+    FIN: '0.10.',
+    AUSST_GENDOK: '',
+    MARKE: '0.1.',
+    TYPE: '0.2.',
+    VAR: '0.2.',
+    VERS: '0.2.',
+    HANDNAME: '0.2.1.',
+    TGNR: '',
+    REVISION_GEN: 'nicht am COC',
+    DAT_GENDOK: '',
+    RADST_1: '4.',
+    RADST_2: '4.1.',
+    RADST_3: '4.1.',
+    RADST_4: '4.1.',
+    LAENGE: '5.',
+    BREITE: '6.',
+    HOEHE: '7.',
+    ABST_ANHVORR: '10.',
+    LADEFL_LAENGE: '11.',
+    UEBERH_HINTEN: '12.',
+    MASSE_FAHRB: '13.',
+    VERT_ACHSE_1: '13.1.',
+    VERT_ACHSE_2: '13.1.',
+    VERT_ACHSE_3: '13.1.',
+    VERT_ACHSE_4: '13.1.',
+    VERT_STUETZ: '13.1.',
+    TATS_FAHRZEUGMASSE: '13.2.',
+    HZUL_NUTZLAST: 'nicht am COC',
+    HZUL_MINDEST: 'nicht am COC',
+    TECH_ZUL_MASSE: '16.1.',
+    TECH_ZUL_ACHSL_1: '16.2.',
+    TECH_ZUL_ACHSL_2: '16.2.',
+    TECH_ZUL_ACHSL_3: '16.2.',
+    TECH_ZUL_ACHSL_4: '16.2.',
+    TECH_ZUL_ACHSGR_1: '16.3.',
+    TECH_ZUL_ACHSGR_2: '16.3.',
+    TECH_ZUL_STUETZ: '19.',
+    VMAX_GEM: '29.',
+    SPURW_1: '30.1./30.2.',
+    SPURW_2: '30.1./30.2.',
+    SPURW_3: '30.1./30.2.',
+    RADREIFEN_ACHSE1: '35.1.',
+    RADREIFEN_ACHSE2: '35.2.',
+    RADREIFEN_ACHSE3: '35.3.',
+    BER_ACHS4: '35.4.',
+    AUFBAU_EU_C: '38.',
+    AUFBAU_NAT_C: '38.',
+    ANHVORR_GENZ: '44.',
+    KENNW_ANHAENGEVORR: '45.1.',
+    FARBE_C: 'nicht am COC',
+    KUNDENNr: 'nicht am COC',
+    TypSMail: 'nicht am COC',
+};
+
+function cleanHitchCharacteristicValue(value: string) {
+    const compact = value.replace(/\s+/g, ' ').trim();
+    const parts: string[] = [];
+    const normalized = compact.replace(/\s*\/\s*/g, '; ');
+
+    for (const match of normalized.matchAll(/\b([DVSU])\s*[=:]\s*([^;]+)/gi)) {
+        const label = match[1].toUpperCase();
+        const raw = match[2].trim().replace(/^[:;\s]+|[:;\s]+$/g, '');
+        if (!raw || /\.{2,}/.test(raw) || !/\d/.test(raw)) {
+            continue;
+        }
+
+        parts.push(`${label}: ${raw}`);
+    }
+
+    return parts.length > 0 ? parts.join('; ') : compact;
+}
+
+function displayValue(key: string, value: unknown) {
+    const text = String(value || '');
+    return key === 'KENNW_ANHAENGEVORR' ? cleanHitchCharacteristicValue(text) : text;
+}
+
 function uniqueFields(fields: string[]) {
     return fields.filter((field, index) => fields.indexOf(field) === index);
 }
@@ -205,12 +283,12 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
                                         <div key={key} className={`field ${isUncertain(uncertainties, key) ? 'uncertain' : ''}`}>
                                             <label htmlFor={key}>
                                                 <span>{key}</span>
-                                                {FIELD_LABELS[key] ? <small>{FIELD_LABELS[key]}</small> : null}
+                                                <small>{[COC_POINTS[key], FIELD_LABELS[key]].filter(Boolean).join(' · ')}</small>
                                             </label>
                                             <input
                                                 id={key}
                                                 name={key}
-                                                defaultValue={String(extractedData[key] || '')}
+                                                defaultValue={displayValue(key, extractedData[key])}
                                                 required={REQUIRED_FIELDS.includes(key)}
                                             />
                                             <span className="confidence">{confidenceLabel(confidenceFor(uncertainties, key))}</span>
