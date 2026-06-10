@@ -702,10 +702,21 @@ export class GeminiService {
         prompt: string,
         config?: Record<string, unknown>
     ) {
-        const models = Array.from(new Set(process.env.GEMINI_MODEL
-            ? [process.env.GEMINI_MODEL, 'gemini-2.5-flash-lite', 'gemini-2.5-flash']
-            : ['gemini-2.5-flash-lite', 'gemini-2.5-flash']))
-            .slice(0, 2);
+        const configuredModels = [
+            ...(process.env.GEMINI_MODELS || '').split(','),
+            process.env.GEMINI_MODEL || '',
+        ]
+            .map((model) => model.trim())
+            .filter(Boolean);
+        const models = Array.from(new Set([
+            ...configuredModels,
+            'gemini-2.5-flash-lite',
+            'gemini-2.5-flash',
+            'gemini-2.0-flash-lite',
+            'gemini-2.0-flash',
+            'gemini-1.5-flash',
+            'gemini-1.5-flash-8b',
+        ]));
         let response: any = null;
         let lastError: unknown = null;
 
