@@ -14,6 +14,20 @@ function wait(ms: number) {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function readableMessage(value: unknown) {
+    if (!value) {
+        return '';
+    }
+    if (typeof value === 'string') {
+        return value;
+    }
+    try {
+        return JSON.stringify(value);
+    } catch {
+        return String(value);
+    }
+}
+
 export default function UploadPage() {
     const router = useRouter();
     const [phase, setPhase] = useState<Phase>('idle');
@@ -29,8 +43,9 @@ export default function UploadPage() {
 
     async function processDocumentWithRetry(id: string): Promise<ProcessAttemptResult> {
         let lastMessage = 'Verarbeitung fehlgeschlagen';
+        const retryDelays = [3000, 8000, 15000, 30000];
 
-        for (let attempt = 1; attempt <= 2; attempt++) {
+        for (let attempt = 1; attempt <= retryDelays.length + 1; attempt++) {
             const processResponse = await fetch('/api/process-pending', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -46,13 +61,15 @@ export default function UploadPage() {
                 return { ok: true };
             }
 
-            lastMessage = processResult.error
-                || innerResults.find((result: any) => Number(result.status) >= 400)?.result?.error
-                || innerResults.find((result: any) => Number(result.status) >= 400)?.result?.message
+            const failedResult = innerResults.find((result: any) => Number(result.status) >= 400);
+            lastMessage = readableMessage(processResult.error)
+                || readableMessage(failedResult?.result?.error)
+                || readableMessage(failedResult?.result?.message)
                 || lastMessage;
 
-            if (attempt < 2) {
-                await wait(1500);
+            if (attempt <= retryDelays.length) {
+                setCurrentStep(`Retry ${attempt}/${retryDelays.length} nach Gemini-Fehler`);
+                await wait(retryDelays[attempt - 1]);
             }
         }
 

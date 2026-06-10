@@ -24,12 +24,13 @@ export async function POST(request: NextRequest) {
     let query = supabase
         .from('documents')
         .select('id')
-        .eq('status', 'new')
         .order('created_at', { ascending: true })
         .limit(MAX_BATCH_SIZE);
 
     if (requestedIds.length > 0) {
         query = query.in('id', requestedIds.slice(0, MAX_BATCH_SIZE));
+    } else {
+        query = query.eq('status', 'new');
     }
 
     const { data, error } = await query;
