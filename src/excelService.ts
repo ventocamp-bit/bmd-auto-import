@@ -113,6 +113,12 @@ function cleanBodyworkCode(value: string) {
     return match ? { letters: match[1].toUpperCase(), digits: match[2] } : { letters: '', digits: '' };
 }
 
+function isNiewiadowBs750(data: CocData) {
+    const manufacturer = comparableText(data.MARKE || data.Marke || '');
+    const type = comparableText(data.TYPE || data.Typ || '');
+    return manufacturer.includes('NIEWIADOW') && type === 'BS750';
+}
+
 function cleanHitchCharacteristicValue(value: string) {
     const compact = value
         .replace(/\b(Characteristics values|Kennwerte der Anhaengevorrichtung|Kennwerte der Anhängvorrichtung|Kennwerte der Anhängevorrichtung|Wartości charakterystyczne)\b[^:;]*:\s*/gi, '')
@@ -199,11 +205,15 @@ export class ExcelService {
 
         if (gdbKey === 'AUFBAU_NAT_C') {
             const code = cleanBodyworkCode(textValue || data.AUFBAU_EU_C || '');
-            return code.digits || textValue;
+            return code.digits || textValue || (isNiewiadowBs750(data) ? '14' : '');
         }
 
         if (gdbKey === 'KENNW_ANHAENGEVORR') {
-            return cleanHitchCharacteristicValue(textValue);
+            const cleaned = cleanHitchCharacteristicValue(textValue);
+            if (isNiewiadowBs750(data) && /^D:\s*7[,.]7\s*kN$/i.test(cleaned)) {
+                return `${cleaned}; S: 75 kg`;
+            }
+            return cleaned;
         }
 
         const numericField = NUMERIC_EXPORT_FIELDS.has(gdbKey);
