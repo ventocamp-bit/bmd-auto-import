@@ -24,7 +24,6 @@ async function getDocument(id: string) {
     return {
         doc,
         fileUrl: fileUrl?.data?.signedUrl || null,
-        csvExportUrl: doc.export_path ? `/api/download?id=${doc.id}&format=csv` : null,
         xlsxExportUrl: doc.extracted_data ? `/api/download?id=${doc.id}&format=xlsx` : null,
     };
 }
@@ -206,7 +205,7 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
         notFound();
     }
 
-    const { doc, fileUrl, csvExportUrl, xlsxExportUrl } = result;
+    const { doc, fileUrl, xlsxExportUrl } = result;
     const extractedData = doc.extracted_data || {};
     const uncertainties = doc.uncertainties || {};
     const ocrText = typeof uncertainties.ocrText === 'string' ? uncertainties.ocrText : '';
@@ -230,7 +229,6 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
                         </button>
                     </form>
                     {xlsxExportUrl ? <DownloadButton href={xlsxExportUrl} label="Behörden-XLSX speichern" documentId={doc.id} /> : null}
-                    {csvExportUrl ? <DownloadButton href={csvExportUrl} label="CSV speichern" documentId={doc.id} /> : null}
                 </div>
             </div>
 

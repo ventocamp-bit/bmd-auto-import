@@ -1,6 +1,5 @@
 import Link from 'next/link';
 import { getSupabaseAdmin, DocumentRecord } from '../src/supabaseService';
-import { BatchDownloadButton } from './BatchDownloadButton';
 
 export const dynamic = 'force-dynamic';
 
@@ -46,7 +45,6 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     const newCount = documents.filter((doc) => doc.status === 'new').length;
     const reviewCount = documents.filter((doc) => doc.status === 'review').length;
     const successCount = documents.filter((doc) => doc.status === 'success').length;
-    const exportableCount = documents.filter((doc) => doc.status === 'success' || doc.status === 'review').length;
 
     return (
         <>
@@ -64,7 +62,6 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
                             <form action="/api/process-pending" method="post">
                                 <button className="primary" type="submit" disabled={newCount === 0}>Nächstes neues verarbeiten</button>
                             </form>
-                            <BatchDownloadButton disabled={exportableCount === 0} />
                             <Link className="button" href="/?archive=1">Archiv</Link>
                             <Link className="button primary" href="/upload">Datei hochladen</Link>
                         </>
