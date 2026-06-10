@@ -141,6 +141,23 @@ function cleanHitchCharacteristicValue(value: string) {
     return parts.length > 0 ? parts.join('; ') : compact.replace(/^[:;\s]+/, '');
 }
 
+function isAuthorityInstructionText(value: string) {
+    return /\b(Geben Sie|Sofern|Falls|Sollte|Finanzen|österreichische Genehmigungsdatenbank|Genehmigungsdatenbank|in dieser Zelle)\b/i.test(value);
+}
+
+function cleanValueCellStyle(style: Record<string, unknown> | undefined) {
+    if (!style) return undefined;
+
+    const {
+        patternType,
+        fgColor,
+        bgColor,
+        ...rest
+    } = style;
+
+    return Object.keys(rest).length > 0 ? rest : undefined;
+}
+
 export class ExcelService {
     private getTemplateName(data: CocData) {
         const marke = comparableText(data.Marke || data.MARKE || '');
@@ -249,7 +266,9 @@ export class ExcelService {
                 
                 const targetCellAddress = xlsx.utils.encode_cell({ r: R, c: 3 }); // Column D
                 const defaultRawValue = typeof ws[targetCellAddress]?.v === 'string' ? ws[targetCellAddress].v : '';
-                const hasDefaultValue = typeof ws[targetCellAddress]?.v === 'string' && ws[targetCellAddress].v.length > 0;
+                const hasDefaultValue = typeof ws[targetCellAddress]?.v === 'string'
+                    && ws[targetCellAddress].v.length > 0
+                    && !isAuthorityInstructionText(ws[targetCellAddress].v);
                 const preserveDefault = options?.preserveAuthorityDefaults
                     && hasDefaultValue
                     && (
@@ -328,7 +347,9 @@ export class ExcelService {
                 const targetValueAddress = xlsx.utils.encode_cell({ r: rowIndex, c: valueColumn });
                 const sourceCell = sheet[sourceValueAddress];
                 const defaultRawValue = typeof sourceCell?.v === 'string' ? sourceCell.v : '';
-                const hasDefaultValue = typeof sourceCell?.v === 'string' && sourceCell.v.length > 0;
+                const hasDefaultValue = typeof sourceCell?.v === 'string'
+                    && sourceCell.v.length > 0
+                    && !isAuthorityInstructionText(sourceCell.v);
                 const preserveDefault = hasDefaultValue
                     && (
                         AUTHORITY_DEFAULT_FIELDS.has(gdbKey)
@@ -342,8 +363,9 @@ export class ExcelService {
                         calculatedFields: document.calculatedFields,
                     });
 
+                const cleanStyle = cleanValueCellStyle(sourceCell?.s);
                 sheet[targetValueAddress] = {
-                    ...(sourceCell?.s ? { s: sourceCell.s } : {}),
+                    ...(cleanStyle ? { s: cleanStyle } : {}),
                     t: 's',
                     v: value,
                 };
