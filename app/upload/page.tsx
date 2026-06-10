@@ -3,7 +3,16 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
-type Phase = 'idle' | 'uploading' | 'processing';
+type Phase = 'idle' | 'running';
+
+type ProcessAttemptResult = {
+    ok: boolean;
+    message?: string;
+};
+
+function wait(ms: number) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 export default function UploadPage() {
     const router = useRouter();
@@ -13,6 +22,42 @@ export default function UploadPage() {
     const [uploadedCount, setUploadedCount] = useState(0);
     const [processedCount, setProcessedCount] = useState(0);
     const [totalToProcess, setTotalToProcess] = useState(0);
+    const [failedCount, setFailedCount] = useState(0);
+    const [duplicateCount, setDuplicateCount] = useState(0);
+    const [currentStep, setCurrentStep] = useState('');
+    const [currentFileName, setCurrentFileName] = useState('');
+
+    async function processDocumentWithRetry(id: string): Promise<ProcessAttemptResult> {
+        let lastMessage = 'Verarbeitung fehlgeschlagen';
+
+        for (let attempt = 1; attempt <= 2; attempt++) {
+            const processResponse = await fetch('/api/process-pending', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: [id] }),
+            });
+
+            const processResult = await processResponse.json().catch(() => ({}));
+            const innerResults = Array.isArray(processResult.results) ? processResult.results : [];
+            const innerOk = innerResults.length > 0
+                && innerResults.every((result: any) => Number(result.status) >= 200 && Number(result.status) < 300);
+
+            if (processResponse.ok && innerOk) {
+                return { ok: true };
+            }
+
+            lastMessage = processResult.error
+                || innerResults.find((result: any) => Number(result.status) >= 400)?.result?.error
+                || innerResults.find((result: any) => Number(result.status) >= 400)?.result?.message
+                || lastMessage;
+
+            if (attempt < 2) {
+                await wait(1500);
+            }
+        }
+
+        return { ok: false, message: lastMessage };
+    }
 
     async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
         event.preventDefault();
@@ -20,7 +65,11 @@ export default function UploadPage() {
         setUploadedCount(0);
         setProcessedCount(0);
         setTotalToProcess(0);
-        setPhase('uploading');
+        setFailedCount(0);
+        setDuplicateCount(0);
+        setCurrentStep('');
+        setCurrentFileName('');
+        setPhase('running');
 
         const form = event.currentTarget;
         const fileInput = form.elements.namedItem('files') as HTMLInputElement | null;
@@ -34,12 +83,19 @@ export default function UploadPage() {
             return;
         }
 
-        const uploadedIds: string[] = [];
-        let duplicateCount = 0;
+        setTotalToProcess(files.length);
+
+        const completedIds: string[] = [];
+        let failedTotal = 0;
+        let duplicateTotal = 0;
 
         for (let index = 0; index < files.length; index++) {
+            const file = files[index];
+            setCurrentFileName(file.name);
+            setCurrentStep(`Upload ${index + 1}/${files.length}`);
+
             const fileFormData = new FormData();
-            fileFormData.append('files', files[index]);
+            fileFormData.append('files', file);
             if (uploadedByInput?.value) {
                 fileFormData.append('uploadedBy', uploadedByInput.value);
             }
@@ -54,44 +110,43 @@ export default function UploadPage() {
 
             const uploadResult = await uploadResponse.json().catch(() => ({}));
 
-            if (!uploadResponse.ok && uploadResponse.status !== 409) {
-                setPhase('idle');
-                setError(uploadResult.message || `Upload fehlgeschlagen bei Datei ${index + 1}/${files.length}`);
-                return;
+            if (uploadResponse.status === 409) {
+                duplicateTotal += Array.isArray(uploadResult.duplicates) ? uploadResult.duplicates.length : 1;
+                setDuplicateCount(duplicateTotal);
+                setProcessedCount(index + 1);
+                continue;
             }
 
-            if (Array.isArray(uploadResult.ids)) {
-                uploadedIds.push(...uploadResult.ids);
+            if (!uploadResponse.ok) {
+                failedTotal += 1;
+                setFailedCount(failedTotal);
+                setProcessedCount(index + 1);
+                setError(uploadResult.message || `Upload fehlgeschlagen bei Datei ${index + 1}/${files.length}. Datei wurde übersprungen.`);
+                continue;
             }
-            duplicateCount += Array.isArray(uploadResult.duplicates) ? uploadResult.duplicates.length : 0;
+
+            const uploadedId = Array.isArray(uploadResult.ids) ? uploadResult.ids[0] : null;
+            duplicateTotal += Array.isArray(uploadResult.duplicates) ? uploadResult.duplicates.length : 0;
+            setDuplicateCount(duplicateTotal);
             setUploadedCount(index + 1);
-        }
 
-        setPhase('processing');
-
-        setTotalToProcess(uploadedIds.length);
-
-        if (uploadedIds.length === 0) {
-            setPhase('idle');
-            setError(duplicateCount > 0 ? 'Diese Datei ist bereits in der aktiven Liste vorhanden.' : 'Keine neue Datei hochgeladen.');
-            return;
-        }
-
-        for (let index = 0; index < uploadedIds.length; index++) {
-            const id = uploadedIds[index];
-            const processResponse = await fetch('/api/process-pending', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ids: [id] }),
-            });
-
-            if (!processResponse.ok) {
-                const processResult = await processResponse.json().catch(() => ({}));
-                setPhase('idle');
-                setError(processResult.error || 'Verarbeitung fehlgeschlagen');
-                return;
+            if (!uploadedId) {
+                failedTotal += 1;
+                setFailedCount(failedTotal);
+                setProcessedCount(index + 1);
+                setError(`Upload ohne Dokument-ID bei Datei ${index + 1}/${files.length}. Datei wurde übersprungen.`);
+                continue;
             }
 
+            setCurrentStep(`Verarbeitung ${index + 1}/${files.length}`);
+            const processResult = await processDocumentWithRetry(uploadedId);
+            if (processResult.ok) {
+                completedIds.push(uploadedId);
+            } else {
+                failedTotal += 1;
+                setFailedCount(failedTotal);
+                setError(`${file.name}: ${processResult.message || 'Verarbeitung fehlgeschlagen'}`);
+            }
             setProcessedCount(index + 1);
         }
 
@@ -101,8 +156,18 @@ export default function UploadPage() {
         setProcessedCount(0);
         setTotalToProcess(0);
 
-        if (uploadedIds.length === 1) {
-            router.push(`/documents/${uploadedIds[0]}`);
+        setCurrentStep('');
+        setCurrentFileName('');
+
+        if (completedIds.length === 0) {
+            setError(duplicateTotal > 0
+                ? 'Keine neuen Dateien verarbeitet. Duplikate wurden übersprungen.'
+                : 'Keine Datei konnte verarbeitet werden.');
+            return;
+        }
+
+        if (completedIds.length === 1 && failedTotal === 0 && duplicateTotal === 0) {
+            router.push(`/documents/${completedIds[0]}`);
             return;
         }
 
@@ -110,13 +175,11 @@ export default function UploadPage() {
     }
 
     const busy = phase !== 'idle';
-    const buttonText = phase === 'uploading'
-        ? `Upload läuft ${uploadedCount}/${selectedCount}`
-        : phase === 'processing'
-            ? `Wird verarbeitet ${processedCount}/${totalToProcess || selectedCount}`
-            : 'Hochladen und verarbeiten';
-    const progressTotal = phase === 'uploading' ? selectedCount : totalToProcess || selectedCount;
-    const progressCurrent = phase === 'uploading' ? uploadedCount : processedCount;
+    const buttonText = phase === 'running'
+        ? `${currentStep || 'Wird verarbeitet'}`
+        : 'Hochladen und verarbeiten';
+    const progressTotal = totalToProcess || selectedCount;
+    const progressCurrent = processedCount;
     const progressPercent = progressTotal > 0 ? Math.round((progressCurrent / progressTotal) * 100) : 0;
 
     return (
@@ -162,15 +225,19 @@ export default function UploadPage() {
                         <div className="progress-block">
                             <div className="progress-meta">
                                 <span>
-                                    {phase === 'uploading'
-                                        ? `${uploadedCount} von ${progressTotal} Dokumenten hochgeladen.`
-                                        : `${processedCount} von ${progressTotal} Dokumenten verarbeitet.`}
+                                    {processedCount} von {progressTotal} Dokumenten abgeschlossen.
                                 </span>
                                 <span>{progressPercent}%</span>
                             </div>
                             <div className="progress-track" aria-label="Verarbeitungsfortschritt">
                                 <div className="progress-fill" style={{ width: `${progressPercent}%` }} />
                             </div>
+                            <p>
+                                {currentFileName ? `Aktuell: ${currentFileName}` : null}
+                                {uploadedCount > 0 ? ` | Hochgeladen: ${uploadedCount}` : null}
+                                {failedCount > 0 ? ` | Fehler: ${failedCount}` : null}
+                                {duplicateCount > 0 ? ` | Duplikate: ${duplicateCount}` : null}
+                            </p>
                         </div>
                     ) : null}
                     <button className="primary" type="submit" disabled={busy}>
