@@ -60,6 +60,7 @@ const AUTHORITY_DEFAULT_FIELDS = new Set([
     'VERT_STUETZ',
     'HZUL_NUTZLAST',
     'HZUL_MINDEST',
+    'AUFBAU_EU_C',
     'FARBE_C',
     'KUNDENNr',
     'TypSMail',
