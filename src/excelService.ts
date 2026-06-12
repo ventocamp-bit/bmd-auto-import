@@ -5,6 +5,7 @@ import { CocData } from './geminiService';
 
 const require = createRequire(import.meta.url);
 const xlsx = require('xlsx');
+const REGISTRATION_EMAIL = 'einmeldung@daltec.at';
 
 type ExportOptions = {
     confidences?: Record<string, number>;
@@ -158,6 +159,18 @@ function cleanValueCellStyle(style: Record<string, unknown> | undefined) {
     return Object.keys(rest).length > 0 ? rest : undefined;
 }
 
+function removeSheetComments(sheet: Record<string, any>) {
+    for (const cellAddress of Object.keys(sheet)) {
+        if (cellAddress.startsWith('!')) {
+            continue;
+        }
+
+        if (sheet[cellAddress]?.c) {
+            delete sheet[cellAddress].c;
+        }
+    }
+}
+
 export class ExcelService {
     private getTemplateName(data: CocData) {
         const marke = comparableText(data.Marke || data.MARKE || '');
@@ -183,6 +196,10 @@ export class ExcelService {
     }
 
     private valueForExport(data: CocData, gdbKey: string, options?: ExportOptions) {
+        if (gdbKey === 'TypSMail') {
+            return REGISTRATION_EMAIL;
+        }
+
         const keyMapping: { [key: string]: string } = {
             'FIN': 'FIN',
             'Aussteller': 'AUSST_GENDOK',
@@ -273,6 +290,7 @@ export class ExcelService {
                 const preserveDefault = options?.preserveAuthorityDefaults
                     && hasDefaultValue
                     && !hasExtractedValue
+                    && colAValue !== 'TypSMail'
                     && (
                         AUTHORITY_DEFAULT_FIELDS.has(colAValue)
                         || (templateName === 'Niewiadow_B1_COC.xlsx' && NIEWIADOW_B1_DEFAULT_FIELDS.has(colAValue))
@@ -291,6 +309,8 @@ export class ExcelService {
             }
         }
         
+        removeSheetComments(ws);
+
         return wb;
     }
 
@@ -355,6 +375,7 @@ export class ExcelService {
                 const hasExtractedValue = typeof document.data[gdbKey] === 'string' && document.data[gdbKey].trim().length > 0;
                 const preserveDefault = hasDefaultValue
                     && !hasExtractedValue
+                    && gdbKey !== 'TypSMail'
                     && (
                         AUTHORITY_DEFAULT_FIELDS.has(gdbKey)
                         || (templateName === 'Niewiadow_B1_COC.xlsx' && NIEWIADOW_B1_DEFAULT_FIELDS.has(gdbKey))
@@ -375,6 +396,8 @@ export class ExcelService {
                 };
             }
         }
+
+        removeSheetComments(sheet);
 
         sheet['!ref'] = xlsx.utils.encode_range({
             s: range.s,
