@@ -6,6 +6,7 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
 const MAX_BATCH_SIZE = 1;
+const STALE_PROCESSING_MINUTES = 10;
 
 async function getRequestedIds(request: NextRequest) {
     const contentType = request.headers.get('content-type') || '';
@@ -21,6 +22,16 @@ async function getRequestedIds(request: NextRequest) {
 export async function POST(request: NextRequest) {
     const supabase = getSupabaseAdmin();
     const requestedIds = await getRequestedIds(request);
+    const staleBefore = new Date(Date.now() - STALE_PROCESSING_MINUTES * 60 * 1000).toISOString();
+
+    if (requestedIds.length === 0) {
+        await supabase
+            .from('documents')
+            .update({ status: 'new', error_message: 'Reset after stale processing timeout' })
+            .eq('status', 'processing')
+            .lt('updated_at', staleBefore);
+    }
+
     let query = supabase
         .from('documents')
         .select('id')

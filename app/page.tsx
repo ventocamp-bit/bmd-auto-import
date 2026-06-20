@@ -16,6 +16,15 @@ function archivedAt(doc: DocumentRecord) {
     return typeof value === 'string' ? value : null;
 }
 
+function isStaleProcessing(doc: DocumentRecord) {
+    if (doc.status !== 'processing') {
+        return false;
+    }
+
+    const referenceTime = new Date(doc.updated_at || doc.created_at).getTime();
+    return Date.now() - referenceTime > 10 * 60 * 1000;
+}
+
 async function getDocuments(showArchive: boolean): Promise<DocumentRecord[]> {
     const supabase = getSupabaseAdmin();
     const { data, error } = await supabase
@@ -43,7 +52,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     const { archive } = await searchParams;
     const showArchive = archive === '1';
     const documents = await getDocuments(showArchive);
-    const newCount = documents.filter((doc) => doc.status === 'new').length;
+    const newCount = documents.filter((doc) => doc.status === 'new' || isStaleProcessing(doc)).length;
     const reviewCount = documents.filter((doc) => doc.status === 'review').length;
     const successCount = documents.filter((doc) => doc.status === 'success').length;
     const exportableCount = documents.filter((doc) => doc.status === 'success' || doc.status === 'review').length;
@@ -92,7 +101,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
                             {documents.map((doc) => (
                                 <tr key={doc.id}>
                                     <td>{doc.original_name}</td>
-                                    <td><span className={`status ${doc.status}`}>{doc.status}</span></td>
+                                    <td><span className={`status ${doc.status}`}>{isStaleProcessing(doc) ? 'new' : doc.status}</span></td>
                                     <td>{doc.manufacturer || '-'}</td>
                                     <td>{formatDate((showArchive && archivedAt(doc)) ? archivedAt(doc)! : doc.created_at)}</td>
                                     <td>{doc.status === 'success' ? 'geprüft' : doc.status === 'review' ? 'prüfen' : 'offen'}</td>
