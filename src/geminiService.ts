@@ -240,6 +240,10 @@ function normalizeValue(value: string, key: FieldName) {
         return cleanHitchCharacteristicValue(trimmed);
     }
 
+    if (/^RADREIFEN_ACHSE\d$/.test(key) || key === 'BER_ACHS4') {
+        return cleanTyreWheelValue(trimmed);
+    }
+
     if (key === 'TYPE' || key === 'VAR' || key === 'VERS') {
         return trimmed
             .replace(/[Т]/g, 'T')
@@ -466,7 +470,11 @@ function extractAxleSpacingByLabels(lines: string[], ocrText: string) {
 }
 
 function cleanTyreWheelValue(value: string) {
-    return value
+    const bounded = value
+        .split(/\b(?:Brakes|Hamulce|Bodywork|Nadwozie|Coupling device|Urz[aą]dzenie sprz[eę]gaj[aą]ce|Miscellaneous|R[oó][zż]ne)\b/i)[0]
+        .split(/\b(?:36\.|38\.|44\.|45\.1\.|50\.|51\.|52\.)\b/i)[0];
+
+    return bounded
         .replace(/\b35\.\s*Tyre\/wheel combination\s*:?\s*/i, '')
         .replace(/\bTyre\/wheel combination\s*:?\s*/i, '')
         .replace(/\baxle\s+\d+\s*/gi, '')

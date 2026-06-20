@@ -142,6 +142,19 @@ function cleanHitchCharacteristicValue(value: string) {
     return parts.length > 0 ? parts.join('; ') : compact.replace(/^[:;\s]+/, '');
 }
 
+function cleanTyreWheelValue(value: string) {
+    const bounded = value
+        .split(/\b(?:Brakes|Hamulce|Bodywork|Nadwozie|Coupling device|Urz[aą]dzenie sprz[eę]gaj[aą]ce|Miscellaneous|R[oó][zż]ne)\b/i)[0]
+        .split(/\b(?:36\.|38\.|44\.|45\.1\.|50\.|51\.|52\.)\b/i)[0];
+
+    return bounded
+        .replace(/\b35\.\s*Tyre\/wheel combination\s*:?\s*/i, '')
+        .replace(/\bTyre\/wheel combination\s*:?\s*/i, '')
+        .replace(/\baxle\s+\d+\s*/gi, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
 function isAuthorityInstructionText(value: string) {
     return /\b(Geben Sie|Sofern|Falls|Sollte|Finanzen|österreichische Genehmigungsdatenbank|Genehmigungsdatenbank|in dieser Zelle)\b/i.test(value);
 }
@@ -248,6 +261,10 @@ export class ExcelService {
                 return `${cleaned}; S: 75 kg`;
             }
             return cleaned;
+        }
+
+        if (/^RADREIFEN_ACHSE\d$/.test(gdbKey) || gdbKey === 'BER_ACHS4') {
+            return cleanTyreWheelValue(textValue);
         }
 
         const numericField = NUMERIC_EXPORT_FIELDS.has(gdbKey);
